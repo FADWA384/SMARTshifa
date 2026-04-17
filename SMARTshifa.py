@@ -7,7 +7,6 @@ import numpy as np
 import random
 import base64
 import google.generativeai as genai
-import bcrypt
 from PIL import Image
 
 st.set_page_config(page_title="SMARTshifa ", page_icon="🧠", layout="centered")
@@ -195,9 +194,7 @@ st.markdown(f"""
 # =========================
 conn = sqlite3.connect("smartshifa.db", check_same_thread=False)
 c = conn.cursor()
-
 c.execute("CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)")
-c.execute("CREATE TABLE IF NOT EXISTS reset_codes (username TEXT, code TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS glucose (username TEXT, valeur REAL, heure TEXT, source TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS medicaments (username TEXT, nom TEXT, heures TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS historique (username TEXT, medicament TEXT, heure TEXT, statut TEXT)")
@@ -208,21 +205,15 @@ conn.commit()
 # =========================
 def signup(u, p):
     try:
-        hashed = bcrypt.hashpw(p.encode(), bcrypt.gensalt())
-        c.execute("INSERT INTO users VALUES (?,?)", (u, hashed))
+        c.execute("INSERT INTO users VALUES (?,?)", (u, p))
         conn.commit()
         return True
     except:
         return False
+
 def login(u, p):
-    c.execute("SELECT password FROM users WHERE username=?", (u,))
-    result = c.fetchone()
-    
-    if result:
-        stored_hash = result[0]
-        if bcrypt.checkpw(p.encode(), stored_hash):
-            return True
-    return False
+    c.execute("SELECT * FROM users WHERE username=? AND password=?", (u, p))
+    return c.fetchone()
 
 # =========================
 # 🤖 AI
@@ -279,7 +270,6 @@ def generer_recommandations(glucose, cholesterol, age, maladies):
     if t("obesity") in maladies:
         reco.append(t("balanced_diet"))
     return reco
-
 def ai_agent_decision(glucose):
     lang = st.session_state.get("lang", "العربية")
 
@@ -322,7 +312,6 @@ def ai_agent_decision(glucose):
             return "✅ Glucosa normal"
         else:
             return "✅ الحالة مزيانة"
-    
 # =========================
 # 🧠 SESSION
 # =========================
@@ -381,57 +370,38 @@ if role == t("patient"):
                     image = Image.open(fichier_uploade)
                     st.image(image, width=200)
     if st.button("🔍 تحليل البيانات"):
-        try:
-            
-            with st.spinner('جاري التحليل...'):
-                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                model = genai.GenerativeModel('models/gemini-2.0-flash') # Tأkd men smiyt l-model
-
-                # AI Analysis
-                response = model.generate_content("حلل الصورة واستخرج قيمة السكر")
-                result = response.text 
-
-            # 2
-            import re
-            match = re.search(r"(\d+\.?\d*)", result)
-
-            if match:
-                glucose_val = float(match.group(1))
-                decision = ai_agent_decision(glucose_val)
-                
-                if "🚨" in decision:
-                    st.error(decision)
-                elif "⚠️" in decision:
-                    st.warning(decision)
-                else:
-                    st.success(decision)
+            try:
+                # 1. Hna fin kankhliwo l-AI i-khdem bach i-3tina 'result'
+                with st.spinner('جاري التحليل...'):
+                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                    model = genai.GenerativeModel('models/gemini-2.5-flash')
+                  
+                    # AI Analysis
+                    response = model.generate_content(["حلل هذه الصورة واستخرج قيمة السكر", image])
+                    result = response.text # Hna t-creeat l-variable li kant dayra l-mochkil!
+              
+                # 2. Daba mlli 'result' mojoda, n-jbdou l-arqam
+                import re
+                match = re.search(r"(\d+\.?\d*)", result)
+              
+                if match:
+                    glucose_val = float(match.group(1))
                     st.session_state.analyzed = True
                     st.success(f"تم استخراج القيمة: {glucose_val} g/L")
                     st.write(result)
-            else:
-                st.warning("الذكاء الاصطناعي لم يجد رقماً واضحاً، تأكد من الصورة")
-                st.write(result)
+                else:
+                    st.warning("الذكاء الاصطناعي لم يجد رقماً واضحاً، تأكد من الصورة.")
+                    st.write(result)
 
-        except Exception as e:
-            st.error(f"حدث خطأ: {e}")
+            except Exception as e:
+                st.error(f"حدث خطأ: {e}")
                                                   
    
           
-    with col2:
+            with col2:
                 st.write(t("manual"))
                 glucose_manuel = st.number_input(t("glucose_val"), 0.1, 5.0, 1.0, 0.1)
-    if st.button(t("save")):
-                c.execute("INSERT INTO glucose VALUES (?,?,?,?)",
-                        (st.session_state.user, glucose_manuel, str(datetime.datetime.now()), "Manuel"))
-                conn.commit()
-                decision = ai_agent_decision(glucose_manuel)
-
-                if "🚨" in decision:
-                    st.error(decision)
-                elif "⚠️" in decision:
-                    st.warning(decision)
-                else:
-                    st.success(decision)            
+            if st.button(t("save")):
                 c.execute("INSERT INTO glucose VALUES (?,?,?,?)", (st.session_state.user, glucose_manuel, str(datetime.datetime.now()), "Manuel"))
                 conn.commit()
                 st.success(t("success_save"))
@@ -443,16 +413,7 @@ if st.session_state.analyzed:  # <--- هادي هي اللي غتحكم ف ال�
 
     if data:
                 derniere = data[0]
-                st.subheader("🧠 AI Decision")
-                decision = ai_agent_decision(derniere["valeur"])
-
-                if "🚨" in decision:
-                    st.error(decision)
-                elif "⚠️" in decision:
-                    st.warning(decision)
-                else:
-                    st.success(decision)
-                couleur = "#FF3030" if derniere["valeur"] > 1.8 else "#30D158"
+                couleur = "#30A2FF" if derniere["valeur"] > 1.8 else "#30D158"
                 st.markdown(f"""<div class="glucose-card"><div class="glucose-value" style='color:{couleur}'>{derniere["valeur"]} g/L</div><div class="glucose-label">{t('last_measure')}</div></div>""", unsafe_allow_html=True)
                 df_glucose = pd.DataFrame(data)
                 df_glucose["heure"] = pd.to_datetime(df_glucose["heure"])
