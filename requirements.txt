@@ -4,3 +4,4 @@ pandas
 google-generativeai
 pillow
 numpy
+streamlit_autorefresh
