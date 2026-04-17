@@ -1,4 +1,6 @@
 streamlit
+bcrypt
 pandas
 google-generativeai
 pillow
+numpy
